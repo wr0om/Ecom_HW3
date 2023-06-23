@@ -69,7 +69,7 @@ class Recommender:
     def q2(self):
         k = 20
         N = 300000
-        P_new = np.random.rand(len(self.users), k)
+        P_new = np.random.uniform(0, 1000, (len(self.users), k))
         Q_new = np.zeros((len(self.songs), k))
         P_old = P_new
         Q_old = Q_new
@@ -78,22 +78,24 @@ class Recommender:
                         for _, row in self.train.iterrows()])
 
         dense_R = self.R.todense()
+        count = 0
         while True:
+            count+=1
             Q_new = np.linalg.lstsq(P_old, dense_R, rcond=None)[0].T
-            if f2(P_old, Q_new) - f2(P_old, Q_old) < N:
+            if f2(P_old, Q_old) - f2(P_old, Q_new) < N:
                 break
             P_new = np.linalg.lstsq(Q_new, dense_R.T, rcond=None)[0].T
-            if f2(P_new, Q_new) - f2(P_old, Q_old) < N:
+            if f2(P_old, Q_new) - f2(P_new, Q_new) < N:
                 break
 
             P_old = P_new
             Q_old = Q_new
-
+        print(f'num of iterations: {count}')
         test_pred = np.zeros(len(self.test))
         for i, row in self.test.iterrows():
             user_index = np.where(row['user_id'] == self.users)[0][0]
             song_index = np.where(row['song_id'] == self.songs)[0][0]
-            test_pred[i] = int(np.dot(P_new[user_index], Q_new[song_index].T)[0, 0])
+            test_pred[i] = np.dot(P_new[user_index], Q_new[song_index].T)[0, 0]
 
         # add test_pred to test as a column
         test_pred_df = self.test.copy(deep=True)
@@ -131,12 +133,12 @@ def main():
     test = pd.read_csv('test.csv')
     rec = Recommender(train, test)
 
-    f1 = rec.q1()
-    print(f"f1 = {f1}")
+    # f1 = rec.q1()
+    # print(f"f1 = {f1}")
     f2 = rec.q2()
     print(f"f2 = {f2}")
-    f3 = rec.q3()
-    print(f"f3 = {f3}")
+    # f3 = rec.q3()
+    # print(f"f3 = {f3}")
 
 
 main()
