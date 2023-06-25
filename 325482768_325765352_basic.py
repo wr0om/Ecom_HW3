@@ -69,33 +69,43 @@ class Recommender:
     def q2(self):
         k = 20
         N = 300000
-        P_new = np.random.uniform(0, 1000, (len(self.users), k))
+        P_new = np.random.uniform(0, 1000, size=(len(self.users), k))
         Q_new = np.zeros((len(self.songs), k))
         P_old = P_new
         Q_old = Q_new
-        f2 = lambda P, Q: np.sum([(row['weight'] - np.dot(P[np.where(row['user_id'] == self.users)[0][0]],
-                                                Q[np.where(row['song_id'] == self.songs)[0][0]].T)) ** 2
-                        for _, row in self.train.iterrows()])
-
         dense_R = self.R.todense()
+
+        f2 = lambda P, Q: np.sum([(dense_R[row, col] - np.dot(P[row], Q[col])) ** 2
+                                  for row, col in zip(*self.R.nonzero())])
+
         count = 0
         while True:
-            count+=1
-            Q_new = np.linalg.lstsq(P_old, dense_R, rcond=None)[0].T
+            count += 1
+            print(f'iteration {count}')
+            for j in range(len(self.songs)):
+                A_j = np.array([P_old[i] for i in range(len(self.users)) if dense_R[i, j] != 0])
+                b_j = np.array([dense_R[i, j] for i in range(len(self.users)) if dense_R[i, j] != 0])
+                Q_new[j] = np.linalg.lstsq(A_j, b_j, rcond=None)[0]
+
             if f2(P_old, Q_old) - f2(P_old, Q_new) < N:
                 break
-            P_new = np.linalg.lstsq(Q_new, dense_R.T, rcond=None)[0].T
+
+            for i in range(len(self.users)):
+                A_i = np.array([Q_new[j] for j in range(len(self.songs)) if dense_R[i, j] != 0])
+                b_i = np.array([dense_R[i, j] for j in range(len(self.songs)) if dense_R[i, j] != 0])
+                P_new[i] = np.linalg.lstsq(A_i, b_i, rcond=None)[0]
+
             if f2(P_old, Q_new) - f2(P_new, Q_new) < N:
                 break
-
             P_old = P_new
             Q_old = Q_new
         print(f'num of iterations: {count}')
+
         test_pred = np.zeros(len(self.test))
         for i, row in self.test.iterrows():
             user_index = np.where(row['user_id'] == self.users)[0][0]
             song_index = np.where(row['song_id'] == self.songs)[0][0]
-            test_pred[i] = np.dot(P_new[user_index], Q_new[song_index].T)[0, 0]
+            test_pred[i] = np.dot(P_new[user_index], Q_new[song_index].T)
 
         # add test_pred to test as a column
         test_pred_df = self.test.copy(deep=True)
