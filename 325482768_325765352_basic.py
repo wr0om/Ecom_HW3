@@ -69,7 +69,7 @@ class Recommender:
     def q2(self):
         k = 20
         N = 300000
-        P = np.random.uniform(0, 1000, size=(len(self.users), k))
+        P = np.random.normal(size=(len(self.users), k))
         Q = np.zeros((len(self.songs), k))
         dense_R = self.R.todense()
 
@@ -77,19 +77,22 @@ class Recommender:
                                                           Q[np.where(row['song_id'] == self.songs)[0][0]])) ** 2
                      for _, row in self.train.iterrows()])
 
+        song_indexes = [[i for i in range(len(self.users)) if dense_R[i, j] != 0] for j in range(len(self.songs))]
+        user_indexes = [[j for j in range(len(self.songs)) if dense_R[i, j] != 0] for i in range(len(self.users))]
+
         count = 0
         prev_loss = f2(P, Q)
         while True:
             count += 1
             print(f'iteration {count} loss is {prev_loss}')
             for j in range(len(self.songs)):
-                A_j = np.array([P[i, :] for i in range(len(self.users)) if dense_R[i, j] != 0])
-                b_j = np.array([dense_R[i, j] for i in range(len(self.users)) if dense_R[i, j] != 0])
+                A_j = np.array([P[i, :] for i in song_indexes[j]])
+                b_j = np.array([dense_R[i, j] for i in song_indexes[j]])
                 Q[j, :] = np.linalg.lstsq(A_j, b_j, rcond=None)[0]
 
             for i in range(len(self.users)):
-                A_i = np.array([Q[j, :] for j in range(len(self.songs)) if dense_R[i, j] != 0])
-                b_i = np.array([dense_R[i, j] for j in range(len(self.songs)) if dense_R[i, j] != 0])
+                A_i = np.array([Q[j, :] for j in user_indexes[i]])
+                b_i = np.array([dense_R[i, j] for j in user_indexes[i]])
                 P[i, :] = np.linalg.lstsq(A_i, b_i, rcond=None)[0]
 
             new_loss = f2(P, Q)
@@ -108,7 +111,7 @@ class Recommender:
         test_pred_df = self.test.copy(deep=True)
         test_pred_df['weight'] = test_pred
         test_pred_df.to_csv('325482768_325765352_task2.csv', index=False)
-        return f2(P, Q)
+        return new_loss
 
     def q3(self):
         k = 20
