@@ -69,58 +69,46 @@ class Recommender:
     def q2(self):
         k = 20
         N = 300000
-        P_new = np.random.uniform(0, 1000, size=(len(self.users), k))
-        Q_new = np.zeros((len(self.songs), k))
-        P_old = P_new
-        Q_old = Q_new
+        P = np.random.uniform(0, 1000, size=(len(self.users), k))
+        Q = np.zeros((len(self.songs), k))
         dense_R = self.R.todense()
 
-        print(f'P - {P_old[0]}')
-        print(f'Q - {Q_old[0]}')
-
-
-        f2 = lambda P, Q: np.sum([(dense_R[row, col] - np.dot(P[row], Q[col].T)) ** 2
-                                  for row, col in zip(*self.R.nonzero())])
-
-
+        f2 = lambda P, Q: np.sum([(row['weight'] - np.dot(P[np.where(row['user_id'] == self.users)[0][0]],
+                                                          Q[np.where(row['song_id'] == self.songs)[0][0]])) ** 2
+                     for _, row in self.train.iterrows()])
 
         count = 0
+        prev_loss = f2(P, Q)
         while True:
             count += 1
-            print(f'iteration {count}')
-            for i in range(len(self.users)):
-                confidence = dense_R[i].squeeze()
-                least_squares = np.dot(Q_old.T, np.dot(np.diag(confidence), Q_old))
-                least_squares_rhs = np.dot(Q_old.T, np.dot(np.diag(confidence), dense_R[i]))
-                P_new[i] = scipy.sparse.spsolve(least_squares, least_squares_rhs)
-
-            if f2(P_old, Q_old) - f2(P_old, Q_new) < N:
-                break
-
+            print(f'iteration {count} loss is {prev_loss}')
             for j in range(len(self.songs)):
-                confidence = dense_R[:, j].squeeze()
-                least_squares = np.dot(Q_new.T, np.dot(np.diag(confidence), Q_new))
-                least_squares_rhs = np.dot(Q_new.T, np.dot(np.diag(confidence), dense_R[:, j]))
-                Q_new[j] = scipy.sparse.spsolve(least_squares, least_squares_rhs)
+                A_j = np.array([P[i, :] for i in range(len(self.users)) if dense_R[i, j] != 0])
+                b_j = np.array([dense_R[i, j] for i in range(len(self.users)) if dense_R[i, j] != 0])
+                Q[j, :] = np.linalg.lstsq(A_j, b_j, rcond=None)[0]
 
-            if f2(P_old, Q_new) - f2(P_new, Q_new) < N:
+            for i in range(len(self.users)):
+                A_i = np.array([Q[j, :] for j in range(len(self.songs)) if dense_R[i, j] != 0])
+                b_i = np.array([dense_R[i, j] for j in range(len(self.songs)) if dense_R[i, j] != 0])
+                P[i, :] = np.linalg.lstsq(A_i, b_i, rcond=None)[0]
+
+            new_loss = f2(P, Q)
+            if prev_loss - new_loss < N:
                 break
-
-            P_old = P_new
-            Q_old = Q_new
+            prev_loss = new_loss
         print(f'num of iterations: {count}')
 
         test_pred = np.zeros(len(self.test))
         for i, row in self.test.iterrows():
             user_index = np.where(row['user_id'] == self.users)[0][0]
             song_index = np.where(row['song_id'] == self.songs)[0][0]
-            test_pred[i] = np.dot(P_new[user_index], Q_new[song_index].T)
+            test_pred[i] = np.dot(P[user_index], Q[song_index].T)
 
         # add test_pred to test as a column
         test_pred_df = self.test.copy(deep=True)
         test_pred_df['weight'] = test_pred
         test_pred_df.to_csv('325482768_325765352_task2.csv', index=False)
-        return f2(P_new, Q_new)
+        return f2(P, Q)
 
     def q3(self):
         k = 20
@@ -147,48 +135,15 @@ class Recommender:
         return f3
 
 
-def alternating_least_squares(R, num_factors=20, convergence_threshold=300000):
-    num_users, num_songs = R.shape
-
-    P = np.random.normal(size=(num_users, num_factors))
-    Q = np.zeros((num_songs, num_factors))
-
-    R = scipy.sparse.csr_matrix(R)  # Convert R to a sparse CSR matrix
-
-    prev_loss = float('inf')  # Initialize previous loss with a large value
-    count = 0
-    while True:
-        count += 1
-        print(f'iteration {count} loss: {prev_loss}')
-        for j in range(num_songs):
-            confidence = R[:, j].toarray().squeeze()
-            least_squares = np.dot(P.T, P)
-            least_squares_rhs = np.dot(P.T, confidence)
-            Q[j, :] = scipy.sparse.linalg.spsolve(least_squares, least_squares_rhs)
-
-        for i in range(num_users):
-            confidence = R[i, :].toarray().squeeze()
-            least_squares = np.dot(Q.T, Q)
-            least_squares_rhs = np.dot(Q.T, confidence)
-            P[i, :] = scipy.sparse.linalg.spsolve(least_squares, least_squares_rhs)
-
-        # Compute loss and check for convergence
-        loss = np.sum([(R[i, j] - np.dot(P[i, :], Q[j, :].T)) ** 2
-                          for i, j in zip(*R.nonzero())])
-        if prev_loss - loss < convergence_threshold:
-            break
-        prev_loss = loss
-    return prev_loss
-
 def main():
     train = pd.read_csv('user_song.csv')
     test = pd.read_csv('test.csv')
     rec = Recommender(train, test)
-    print(f'{alternating_least_squares(rec.R.todense())}')
+
     # f1 = rec.q1()
     # print(f"f1 = {f1}")
-    # f2 = rec.q2()
-    # print(f"f2 = {f2}")
+    f2 = rec.q2()
+    print(f"f2 = {f2}")
     # f3 = rec.q3()
     # print(f"f3 = {f3}")
 
