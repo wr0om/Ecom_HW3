@@ -40,19 +40,6 @@ class Recommender:
 
         self.R = scipy.sparse.coo_matrix((values, zip(*indices)), shape=(len(self.users), len(self.songs)))
 
-    def q3(self):
-        k = 20
-        # calculate PCA with k of R
-        R = self.R.astype(np.float64)
-        u, s, vt = scipy.sparse.linalg.svds(R, k=k)
-        # calculate R_hat
-        R_hat = np.dot(np.dot(u, np.diag(s)), vt)
-        # calculate f3
-        f3 = np.sum([(row['weight'] - R_hat[
-            np.where(row['user_id'] == self.users)[0][0], np.where(row['song_id'] == self.songs)[0][0]]) ** 2
-                     for _, row in self.train.iterrows()])
-
-        return f3
 
     def q4(self):
         f4 = lambda R_hat, indexes, values: np.sum([(R_hat[index] - value) ** 2
@@ -63,8 +50,6 @@ class Recommender:
         for row, col in zip(*self.R.nonzero()):
             indices.append((row, col))
             values.append(dense_R[row, col])
-        indices = np.array(indices)
-        values = np.array(values)
 
         # split to train and test
         indicies_train, indicies_test, values_train, values_test = train_test_split(indices, values, test_size=0.33)
