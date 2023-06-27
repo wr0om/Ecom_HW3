@@ -57,14 +57,20 @@ class Recommender:
         # create R_train
         R_train = scipy.sparse.coo_matrix((values_train, zip(*indicies_train)),
                                           shape=(len(self.users), len(self.songs)))
+        u, s, vt = scipy.sparse.linalg.svds(R_train, k=20)
+        # calculate R_hat
+        R_train_baseline = np.dot(np.dot(u, np.diag(s)), vt)
+        loss = f4(R_train_baseline, indicies_test, values_test)
+        print(f'for baseline, the loss is {loss}')
 
         R_train = np.asarray(R_train.todense())
         # Creating and training the MLP model
-        R_train_hat = NMF_model(R_train, n_components=20, max_iter=1000, alpha_W=1.5, alpha_H=1.5, solver='cd')
-
-        # calculate f4
-        loss = f4(R_train_hat, indicies_test, values_test)
-        print(loss)
+        h_values = [1.5, 2, 2.5, 3, 5]
+        for h in h_values:
+            R_train_hat = NMF_model(R_train, n_components=50, max_iter=2500, alpha_W=1.5, alpha_H=h, solver='cd')
+            # calculate f4
+            loss = f4(R_train_hat, indicies_test, values_test)
+            print(f'for n = {h}, the loss is {loss}')
 
         # test_pred = np.zeros(len(self.test))
         # for i in range(len(self.test)):
