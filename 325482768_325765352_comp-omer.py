@@ -5,14 +5,13 @@ import sklearn
 
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import NMF
 
 np.random.seed(0)
 
 
 class Recommender:
-
     def __init__(self, train, test):
         self.R = None
         self.songs = None
@@ -20,6 +19,7 @@ class Recommender:
         self.train = train
         self.test = test
         self.train_test = None
+        self.model = None
         self.fit()
 
     def fit(self):
@@ -51,57 +51,61 @@ class Recommender:
         f3 = np.sum([(row['weight'] - R_hat[
             np.where(row['user_id'] == self.users)[0][0], np.where(row['song_id'] == self.songs)[0][0]]) ** 2
                      for _, row in self.train.iterrows()])
-
         return f3
 
     def q4(self):
-        f4 = lambda R_hat, indexes, values: np.sum([(R_hat[index] - value) ** 2
-                                                    for index, value in zip(indexes, values)])
-        indices = []
-        values = []
-        dense_R = self.R.todense()
-        for row, col in zip(*self.R.nonzero()):
-            indices.append((row, col))
-            values.append(dense_R[row, col])
-        indices = np.array(indices)
-        values = np.array(values)
+        R = np.asarray(self.R.todense())
 
-        # split to train and test
-        indicies_train, indicies_test, values_train, values_test = train_test_split(indices, values, test_size=0.33)
-
-        # create R_train
-        R_train = scipy.sparse.coo_matrix((values_train, zip(*indicies_train)),
-                                          shape=(len(self.users), len(self.songs)))
-
-        R_train = np.asarray(R_train.todense())
         # Creating and training the MLP model
-        R_train_hat = NMF_model(R_train, n_components=20, max_iter=1000, alpha_W=1.5, alpha_H=1.5, solver='cd')
+        self.model = MLPRegressor(hidden_layer_sizes=(64, 32), activation='relu', random_state=42)
+        self.model.fit(R, R)
+        R_hat = self.model.predict(R)
+        f4 = np.sum([(row['weight'] - R_hat[
+            np.where(row['user_id'] == self.users)[0][0], np.where(row['song_id'] == self.songs)[0][0]]) ** 2
+                        for _, row in self.train.iterrows()])
 
-        # calculate f4
-        loss = f4(R_train_hat, indicies_test, values_test)
-        print(loss)
+        test_pred = np.zeros(len(self.test))
+        for i in range(len(self.test)):
+            test_pred[i] = R_hat[
+                np.where(self.test['user_id'][i] == self.users)[0][0],
+                np.where(self.test['song_id'][i] == self.songs)[0][0]]
 
-        # test_pred = np.zeros(len(self.test))
-        # for i in range(len(self.test)):
-        #     test_pred[i] = R_hat[
-        #         np.where(self.test['user_id'][i] == self.users)[0][0],
-        #         np.where(self.test['song_id'][i] == self.songs)[0][0]]
-        #
-        # # add test_pred to test as a column
-        # test_pred_df = self.test.copy(deep=True)
-        # test_pred_df['weight'] = test_pred
-        # test_pred_df.to_csv('325482768_325765352_task4.csv', index=False)
+        # add test_pred to test as a column
+        test_pred_df = self.test.copy(deep=True)
+        test_pred_df['weight'] = test_pred
+        test_pred_df.to_csv('325482768_325765352_task4.csv', index=False)
 
-        return loss
+        return f4
+
+    def cv(self, kfolds=5, random_state=0):
+        R = np.asarray(self.R.todense())
+        kf = KFold(n_splits=kfolds, random_state=random_state, shuffle=True)
+        rmse_score = []
+        for t_idx, v_idx in kf.split(R):
+            R_train, R_val = R[t_idx], R[v_idx]
+            self.model.fit(R_train)
+            val_pred = self.model.transform(R_val) @ self.model.components_
+            mse_score = mean_squared_error(R_val, val_pred)
+            rmse_score.append(mse_score ** 0.5)
+
+        return rmse_score, np.mean(rmse_score)
+
+    def cv_results(self, params, rs=0, kfolds=5):
+        CV_dict = dict()
+        for n in params:
+            self.model = NMF(n_components = n, init='random', max_iter=1000)
+            CV_dict[f'{n}_components'] = self.cv()
+        return CV_dict
+
+    def f4(self, R, R_):
 
 
-def NMF_model(R, n_components, max_iter=1000, alpha_W=1.5, alpha_H=1.5, solver='cd'):
-    model = NMF(n_components=n_components, init='random', max_iter=max_iter, alpha_W=alpha_W, alpha_H=alpha_H, solver=solver)
+def NMF_model(R, n_components):
+    model = NMF(n_components=n_components, init='random', max_iter=1000, alpha_W=1.5, alpha_H=1.5)
     W = model.fit_transform(R)
     H = model.components_
     R_hat = np.dot(W, H)
     return R_hat
-
 
 def MLPR_model(R):
     # Creating and training the MLP model
@@ -112,10 +116,12 @@ def MLPR_model(R):
 
 
 def main():
+    params = [100]
     train = pd.read_csv('user_song.csv')
     test = pd.read_csv('test.csv')
     rec = Recommender(train, test)
-    rec.q4()
-
+    res = rec.cv_results(params)
+    for item in res.items():
+        print(f'For model {item[0]} the score is RMSE = {item[1][1]}')
 
 main()
