@@ -75,10 +75,13 @@ class Recommender:
 
         f2 = lambda P, Q: np.sum([(row['weight'] - np.dot(P[np.where(row['user_id'] == self.users)[0][0]],
                                                           Q[np.where(row['song_id'] == self.songs)[0][0]])) ** 2
-                     for _, row in self.train.iterrows()])
+                                  for _, row in self.train.iterrows()])
 
         song_indexes = [[i for i in range(len(self.users)) if dense_R[i, j] != 0] for j in range(len(self.songs))]
         user_indexes = [[j for j in range(len(self.songs)) if dense_R[i, j] != 0] for i in range(len(self.users))]
+
+        b_j = [np.array([dense_R[i, j] for i in song_indexes[j]]) for j in range(len(self.songs))]
+        b_i = [np.array([dense_R[i, j] for j in user_indexes[i]]) for i in range(len(self.users))]
 
         count = 0
         prev_loss = f2(P, Q)
@@ -87,13 +90,11 @@ class Recommender:
             print(f'iteration {count} loss is {prev_loss}')
             for j in range(len(self.songs)):
                 A_j = np.array([P[i, :] for i in song_indexes[j]])
-                b_j = np.array([dense_R[i, j] for i in song_indexes[j]])
-                Q[j, :] = np.linalg.lstsq(A_j, b_j, rcond=None)[0]
+                Q[j, :] = np.linalg.lstsq(A_j, b_j[j], rcond=None)[0]
 
             for i in range(len(self.users)):
                 A_i = np.array([Q[j, :] for j in user_indexes[i]])
-                b_i = np.array([dense_R[i, j] for j in user_indexes[i]])
-                P[i, :] = np.linalg.lstsq(A_i, b_i, rcond=None)[0]
+                P[i, :] = np.linalg.lstsq(A_i, b_i[i], rcond=None)[0]
 
             new_loss = f2(P, Q)
             if prev_loss - new_loss < N:
